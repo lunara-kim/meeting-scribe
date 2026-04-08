@@ -1,6 +1,8 @@
 import os
 import base64
 import tempfile
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import yaml
 import requests
@@ -10,6 +12,23 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 from dotenv import load_dotenv
 
 from stt import get_stt
+
+
+# ── Fly.io 헬스체크용 미니 HTTP 서버 ───────────────────────
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ok")
+
+    def log_message(self, format, *args):
+        pass  # 헬스체크 로그 무시
+
+
+def start_health_server():
+    server = HTTPServer(("0.0.0.0", 8080), HealthHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    print("🩺 Health check server started on :8080")
 
 load_dotenv()
 
@@ -24,6 +43,34 @@ AUDIO_EXTENSIONS = {".mp3", ".mp4", ".wav", ".m4a", ".ogg", ".webm", ".flac"}
 
 
 # ── Slack 이벤트 핸들러 ────────────────────────────────────
+@app.event("app_mention")
+def on_mention(event, client, say):
+    """@meeting-scribe 멘션 시 → 같은 스레드(또는 채널)의 오디오 파일 처리"""
+    channel = event["channel"]
+    thread_ts = event.get("thread_ts") or event.get("ts")
+
+    # 스레드 내 메시지 목록 조회
+    result = client.conversations_replies(channel=channel, ts=thread_ts)
+    messages = result.get("messages", [])
+
+    # 오디오 파일 탐색
+    audio_file = None
+    for msg in messages:
+        for f in msg.get("files", []):
+            ext = os.path.splitext(f.get("name", ""))[1].lower()
+            if ext in AUDIO_EXTENSIONS:
+                audio_file = f
+                break
+        if audio_file:
+            break
+
+    if not audio_file:
+        say(text="⚠️ 스레드에서 오디오 파일을 찾지 못했습니다. 녹음 파일과 같은 스레드에서 멘션해 주세요.", thread_ts=thread_ts)
+        return
+
+    _process_audio_file(audio_file, say, thread_ts)
+
+
 @app.event("file_shared")
 def on_file_shared(event, client, say):
     file_info = client.files_info(file=event["file_id"])["file"]
@@ -116,5 +163,6 @@ def generate_and_publish(transcript: str) -> str:
 
 # ── 실행 ───────────────────────────────────────────────────
 if __name__ == "__main__":
+    start_health_server()
     print("🚀 회의록 에이전트 시작")
     SocketModeHandler(app, os.getenv("SLACK_APP_TOKEN")).start()

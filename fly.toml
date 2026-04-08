@@ -3,9 +3,13 @@ primary_region = "nrt"  # 도쿄 리전 (한국에서 가장 가까움)
 
 [build]
 
-[env]
-  # 환경변수는 fly secrets로 관리 (아래 실행 방법 참고)
+[http_service]
+  internal_port = 8080
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
 
-[[services]]
-  # Slack 봇은 웹 서버가 아니므로 HTTP 서비스 없음
-  # Socket Mode로 상시 실행
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
