@@ -3,6 +3,9 @@ primary_region = "nrt"  # 도쿄 리전 (한국에서 가장 가까움)
 
 [build]
 
+[env]
+  PYTHONUNBUFFERED = "1"
+
 [http_service]
   internal_port = 8080
   auto_stop_machines = "off"
