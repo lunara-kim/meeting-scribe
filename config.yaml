@@ -1,5 +1,5 @@
 stt:
-  provider: whisper_local        # whisper_local / whisper_api 선택
+  provider: whisper_api        # whisper_local / whisper_api 선택
   whisper_local:
     model_size: medium           # tiny / base / small / medium / large
   whisper_api:
