@@ -1,0 +1,7 @@
+anthropic
+slack-bolt
+requests
+pyyaml
+python-dotenv
+openai-whisper      # whisper_local 사용 시
+openai              # whisper_api 사용 시

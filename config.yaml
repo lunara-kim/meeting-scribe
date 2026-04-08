@@ -1,0 +1,20 @@
+stt:
+  provider: whisper_local        # whisper_local / whisper_api 선택
+  whisper_local:
+    model_size: medium           # tiny / base / small / medium / large
+  whisper_api:
+    api_key: ${OPENAI_API_KEY}
+
+atlassian:
+  base_url: https://your-domain.atlassian.net
+  user_email: your-email@company.com
+  api_token: ${ATLASSIAN_API_TOKEN}
+
+confluence:
+  space_key: TEAM
+  parent_page_id: "123456"      # 회의록이 저장될 페이지
+  template_page_id: "789012"    # 회의록 양식 페이지
+
+slack:
+  bot_token: ${SLACK_BOT_TOKEN}
+  app_token: ${SLACK_APP_TOKEN}
