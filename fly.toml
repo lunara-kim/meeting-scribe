@@ -1,4 +1,4 @@
-app = "meeting-scribe"
+app = "lunara-meeting-scribe"
 primary_region = "nrt"  # 도쿄 리전 (한국에서 가장 가까움)
 
 [build]
