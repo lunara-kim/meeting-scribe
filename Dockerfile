@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 시스템 패키지 (whisper 로컬 사용 시 ffmpeg 필요)
+# whisper_local 전환 시 ffmpeg 필요하므로 유지
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*

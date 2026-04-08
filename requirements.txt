@@ -3,5 +3,4 @@ slack-bolt
 requests
 pyyaml
 python-dotenv
-openai-whisper      # whisper_local 사용 시
-openai              # whisper_api 사용 시
+openai              # whisper API + 추후 whisper_local 전환 시에도 사용
