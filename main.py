@@ -71,18 +71,13 @@ def on_mention(event, client, say):
     _process_audio_file(audio_file, say, thread_ts)
 
 
-@app.event("file_shared")
-def on_file_shared(event, client, say):
-    file_info = client.files_info(file=event["file_id"])["file"]
+def _process_audio_file(file_info, say, thread_ts):
+    """오디오 파일을 다운로드 → STT → 회의록 생성 → Confluence 게시"""
     filename = file_info.get("name", "")
     ext = os.path.splitext(filename)[1].lower()
 
-    if ext not in AUDIO_EXTENSIONS:
-        return  # 오디오 파일이 아니면 무시
+    say(text="🎙️ 녹음 파일 감지! 회의록 생성을 시작합니다...", thread_ts=thread_ts)
 
-    say("🎙️ 녹음 파일 감지! 회의록 생성을 시작합니다...")
-
-    # 파일 다운로드
     response = requests.get(
         file_info["url_private_download"],
         headers={"Authorization": f"Bearer {os.getenv('SLACK_BOT_TOKEN')}"},
@@ -93,20 +88,70 @@ def on_file_shared(event, client, say):
         tmp_path = tmp.name
 
     try:
-        # STT 변환
-        say("📝 음성 → 텍스트 변환 중...")
+        say(text="📝 음성 → 텍스트 변환 중...", thread_ts=thread_ts)
         stt = get_stt(config)
         transcript = stt.transcribe(tmp_path)
         print(f"[STT 결과]\n{transcript[:200]}...")
 
-        # 회의록 생성 + Confluence 게시
-        say("🤖 회의록 작성 및 Confluence 게시 중...")
+        say(text="🤖 회의록 작성 및 Confluence 게시 중...", thread_ts=thread_ts)
         page_url = generate_and_publish(transcript)
 
-        say(f"✅ 회의록이 생성되었습니다!\n{page_url}")
+        say(text=f"✅ 회의록이 생성되었습니다!\n{page_url}", thread_ts=thread_ts)
 
     except Exception as e:
-        say(f"❌ 오류가 발생했습니다: {str(e)}")
+        say(text=f"❌ 오류가 발생했습니다: {str(e)}", thread_ts=thread_ts)
+        raise
+
+    finally:
+        os.unlink(tmp_path)
+
+
+@app.event("file_shared")
+def on_file_shared(event, client, say):
+    file_id = event["file_id"]
+    file_info = client.files_info(file=file_id)["file"]
+    filename = file_info.get("name", "")
+    ext = os.path.splitext(filename)[1].lower()
+
+    if ext not in AUDIO_EXTENSIONS:
+        return  # 오디오 파일이 아니면 무시
+
+    # file_shared 이벤트에서 채널 정보 추출
+    channels = file_info.get("channels", [])
+    if not channels:
+        print(f"[WARN] file_shared 이벤트에 채널 정보 없음: {file_id}")
+        return
+
+    channel = channels[0]
+    thread_ts = file_info.get("shares", {}).get("public", {}).get(channel, [{}])[0].get("ts")
+
+    def reply(text):
+        client.chat_postMessage(channel=channel, text=text, thread_ts=thread_ts)
+
+    reply("🎙️ 녹음 파일 감지! 회의록 생성을 시작합니다...")
+
+    response = requests.get(
+        file_info["url_private_download"],
+        headers={"Authorization": f"Bearer {os.getenv('SLACK_BOT_TOKEN')}"},
+    )
+
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        tmp.write(response.content)
+        tmp_path = tmp.name
+
+    try:
+        reply("📝 음성 → 텍스트 변환 중...")
+        stt = get_stt(config)
+        transcript = stt.transcribe(tmp_path)
+        print(f"[STT 결과]\n{transcript[:200]}...")
+
+        reply("🤖 회의록 작성 및 Confluence 게시 중...")
+        page_url = generate_and_publish(transcript)
+
+        reply(f"✅ 회의록이 생성되었습니다!\n{page_url}")
+
+    except Exception as e:
+        reply(f"❌ 오류가 발생했습니다: {str(e)}")
         raise
 
     finally:
@@ -164,5 +209,20 @@ def generate_and_publish(transcript: str) -> str:
 # ── 실행 ───────────────────────────────────────────────────
 if __name__ == "__main__":
     start_health_server()
+
+    app_token = os.getenv("SLACK_APP_TOKEN")
+    if not app_token:
+        print("❌ SLACK_APP_TOKEN 환경변수가 설정되지 않았습니다.")
+        exit(1)
+    if not app_token.startswith("xapp-"):
+        print(f"⚠️ SLACK_APP_TOKEN이 'xapp-'으로 시작하지 않습니다: {app_token[:10]}...")
+
     print("🚀 회의록 에이전트 시작")
-    SocketModeHandler(app, os.getenv("SLACK_APP_TOKEN")).start()
+    print("🔌 Socket Mode 연결 시도 중...")
+
+    try:
+        handler = SocketModeHandler(app, app_token)
+        handler.start()
+    except Exception as e:
+        print(f"❌ Socket Mode 연결 실패: {e}")
+        exit(1)
