@@ -1,5 +1,4 @@
 import os
-import base64
 import tempfile
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -12,6 +11,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 from dotenv import load_dotenv
 
 from stt import get_stt
+from publisher import get_publisher
 
 
 # ── Fly.io 헬스체크용 미니 HTTP 서버 ───────────────────────
@@ -158,52 +158,50 @@ def on_file_shared(event, client, say):
         os.unlink(tmp_path)
 
 
-# ── Claude + Atlassian MCP로 회의록 생성 + 게시 ────────────
-def generate_and_publish(transcript: str) -> str:
-    cfg_a = config["atlassian"]
-    cfg_c = config["confluence"]
-
-    # Atlassian Basic Auth 토큰 생성
-    email = cfg_a["user_email"]
-    token = os.getenv("ATLASSIAN_API_TOKEN")
-    auth_token = base64.b64encode(f"{email}:{token}".encode()).decode()
-
+# ── Claude로 회의록 생성 ──────────────────────────────────
+def generate_minutes(transcript: str) -> tuple[str, str]:
+    """회의록 제목과 HTML 본문을 생성하여 (title, body_html) 튜플로 반환한다."""
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-    prompt = f"""다음 순서대로 진행해주세요.
+    prompt = f"""아래 회의 녹취록을 분석하여 회의록을 작성해주세요.
 
-1. Confluence 페이지(ID: {cfg_c['template_page_id']})를 읽어서 회의록 양식을 파악하세요.
-2. 아래 [STT 결과]를 바탕으로 해당 양식에 맞게 한국어로 회의록을 작성하세요.
-3. 작성한 회의록을 Confluence에 새 페이지로 게시하세요.
-   - space_key: {cfg_c['space_key']}
-   - parent_page_id: {cfg_c['parent_page_id']}
-   - 제목: 회의록 - [회의 날짜 및 주제]
-4. 생성된 페이지의 URL만 반환하세요.
+## 출력 형식
+첫 줄에 제목만 출력하고, 그 다음 줄부터 HTML 본문을 출력하세요.
+제목 형식: 회의록 - [날짜] [주제]
 
-[STT 결과]
+HTML 본문에는 다음을 포함하세요:
+- 회의 일시, 참석자
+- 주요 안건 및 논의 내용
+- 결정 사항
+- Action Item (담당자, 기한)
+
+## 녹취록
 {transcript}
 """
 
-    response = client.beta.messages.create(
-        model="claude-opus-4-5",
+    response = client.messages.create(
+        model="claude-sonnet-4-5-20250514",
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
-        mcp_servers=[
-            {
-                "type": "url",
-                "url": "https://mcp.atlassian.com/v1/mcp",
-                "name": "atlassian",
-                "authorization_token": auth_token,
-            }
-        ],
-        betas=["mcp-client-2025-04-04"],
     )
 
+    text = ""
     for block in response.content:
-        if hasattr(block, "text") and block.text.strip():
-            return block.text.strip()
+        if hasattr(block, "text"):
+            text += block.text
 
-    return "(페이지 URL을 가져오지 못했습니다)"
+    lines = text.strip().split("\n", 1)
+    title = lines[0].strip().removeprefix("#").strip()
+    body_html = lines[1].strip() if len(lines) > 1 else ""
+
+    return title, body_html
+
+
+# ── 회의록 생성 + 게시 ────────────────────────────────────
+def generate_and_publish(transcript: str) -> str:
+    title, body_html = generate_minutes(transcript)
+    publisher = get_publisher(config)
+    return publisher.publish(title, body_html)
 
 
 # ── 실행 ───────────────────────────────────────────────────

@@ -5,16 +5,17 @@ stt:
   whisper_api:
     api_key: ${OPENAI_API_KEY}
 
-atlassian:
-  base_url: https://hectoinno.atlassian.net
-  confluence_url: https://hectoinno.atlassian.net/wiki
-  user_email: eunhyekim@hecto.co.kr
-  api_token: ${ATLASSIAN_API_TOKEN}
-
-confluence:
-  space_key: TF
-  parent_page_id: "323190803"   # 회의록 부모 페이지
-  template_page_id: "323747841" # 회의록 양식 페이지
+publisher:
+  provider: notion               # confluence / notion 선택
+  confluence:
+    base_url: https://hectoinno.atlassian.net/wiki
+    space_key: TF
+    parent_page_id: "323190803"
+    user_email: eunhyekim@hecto.co.kr
+    api_token: ${ATLASSIAN_API_TOKEN}
+  notion:
+    parent_page_id: ""           # Notion 부모 페이지 ID
+    api_token: ${NOTION_API_TOKEN}
 
 slack:
   bot_token: ${SLACK_BOT_TOKEN}
