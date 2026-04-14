@@ -79,6 +79,25 @@ class NotionPublisher:
 
         return resp.json()["url"]
 
+    def _split_utf16(self, text: str, limit: int = 1900) -> list:
+        """Notion의 2000자 제한(UTF-16 code unit 기준)에 맞춰 텍스트를 분할한다."""
+        chunks = []
+        buf = ""
+        buf_units = 0
+        for ch in text:
+            # BMP 외 문자는 UTF-16 surrogate pair (2 units)
+            units = 2 if ord(ch) > 0xFFFF else 1
+            if buf_units + units > limit:
+                chunks.append(buf)
+                buf = ch
+                buf_units = units
+            else:
+                buf += ch
+                buf_units += units
+        if buf:
+            chunks.append(buf)
+        return chunks
+
     def _html_to_blocks(self, html: str) -> list:
         """HTML 문자열을 Notion 블록 리스트로 변환한다."""
         import re
@@ -96,17 +115,25 @@ class NotionPublisher:
             if h_match:
                 level = int(h_match.group(1))
                 block_type = f"heading_{level}"
+                # heading도 길면 잘라야 하므로 첫 청크만 사용하거나 뒷 청크는 paragraph로 추가
+                heading_chunks = self._split_utf16(text)
                 blocks.append({
                     "object": "block",
                     "type": block_type,
                     block_type: {
-                        "rich_text": [{"type": "text", "text": {"content": text}}]
+                        "rich_text": [{"type": "text", "text": {"content": heading_chunks[0]}}]
                     },
                 })
+                for extra in heading_chunks[1:]:
+                    blocks.append({
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [{"type": "text", "text": {"content": extra}}]
+                        },
+                    })
             else:
-                # 긴 텍스트는 2000자 단위로 분할 (Notion API 제한)
-                for i in range(0, len(text), 2000):
-                    chunk = text[i:i + 2000]
+                for chunk in self._split_utf16(text):
                     blocks.append({
                         "object": "block",
                         "type": "paragraph",
