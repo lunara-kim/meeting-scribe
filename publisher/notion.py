@@ -61,7 +61,9 @@ class NotionPublisher:
         payload = {
             "parent": {"page_id": self.parent_page_id},
             "properties": {
-                "title": [{"text": {"content": title}}]
+                "title": {
+                    "title": [{"type": "text", "text": {"content": title[:2000]}}]
+                }
             },
             "children": blocks,
         }
@@ -71,7 +73,9 @@ class NotionPublisher:
             json=payload,
             headers=self._headers(),
         )
-        resp.raise_for_status()
+        if not resp.ok:
+            print(f"[Notion] {resp.status_code} 응답 본문: {resp.text}")
+            resp.raise_for_status()
 
         return resp.json()["url"]
 
