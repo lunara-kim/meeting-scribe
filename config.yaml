@@ -5,6 +5,17 @@ stt:
   whisper_api:
     api_key: ${OPENAI_API_KEY}
 
+llm:
+  provider: anthropic            # anthropic / ollama 선택
+  anthropic:
+    api_key: ${ANTHROPIC_API_KEY}
+    model: claude-sonnet-4-5
+    max_tokens: 4096
+  ollama:
+    base_url: http://localhost:11434
+    model: llama3.1
+    timeout: 300
+
 publisher:
   provider: notion               # confluence / notion 선택
   confluence:

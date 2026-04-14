@@ -6,13 +6,13 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import yaml
 import requests
-import anthropic
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from dotenv import load_dotenv
 
 from stt import get_stt
 from publisher import get_publisher
+from llm import get_llm
 
 
 # ── Fly.io 헬스체크용 미니 HTTP 서버 ───────────────────────
@@ -203,10 +203,10 @@ def on_file_shared(event, client, say):
         os.unlink(tmp_path)
 
 
-# ── Claude로 회의록 생성 ──────────────────────────────────
+# ── LLM으로 회의록 생성 ────────────────────────────────────
 def generate_minutes(transcript: str, template: str = "") -> tuple[str, str]:
     """회의록 제목과 HTML 본문을 생성하여 (title, body_html) 튜플로 반환한다."""
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    llm = get_llm(config)
 
     template_section = (
         f"\n## 회의록 양식 (아래 구조를 그대로 따라 작성하세요)\n{template}\n"
@@ -224,16 +224,7 @@ def generate_minutes(transcript: str, template: str = "") -> tuple[str, str]:
 {transcript}
 """
 
-    response = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    text = ""
-    for block in response.content:
-        if hasattr(block, "text"):
-            text += block.text
+    text = llm.complete(prompt)
 
     lines = text.strip().split("\n", 1)
     title = lines[0].strip().removeprefix("#").strip()
