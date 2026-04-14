@@ -93,7 +93,7 @@ def _process_audio_file(file_info, say, thread_ts):
         transcript = stt.transcribe(tmp_path)
         print(f"[STT 결과]\n{transcript[:200]}...")
 
-        say(text="🤖 회의록 작성 및 Confluence 게시 중...", thread_ts=thread_ts)
+        say(text="🤖 회의록 작성 및 게시 중...", thread_ts=thread_ts)
         page_url = generate_and_publish(transcript)
 
         say(text=f"✅ 회의록이 생성되었습니다!\n{page_url}", thread_ts=thread_ts)
@@ -145,7 +145,7 @@ def on_file_shared(event, client, say):
         transcript = stt.transcribe(tmp_path)
         print(f"[STT 결과]\n{transcript[:200]}...")
 
-        reply("🤖 회의록 작성 및 Confluence 게시 중...")
+        reply("🤖 회의록 작성 및 게시 중...")
         page_url = generate_and_publish(transcript)
 
         reply(f"✅ 회의록이 생성되었습니다!\n{page_url}")
