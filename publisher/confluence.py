@@ -22,6 +22,10 @@ class ConfluencePublisher:
             "Accept": "application/json",
         }
 
+    def get_template(self) -> str:
+        """Confluence 양식은 현재 미지원 (추후 구현)."""
+        return ""
+
     def publish(self, title: str, body_html: str) -> str:
         """Confluence에 새 페이지를 생성하고 URL을 반환한다."""
         url = f"{self.base_url}/rest/api/content"

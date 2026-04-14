@@ -5,6 +5,7 @@ import requests
 class NotionPublisher:
     def __init__(self, config: dict):
         self.parent_page_id = config["parent_page_id"]
+        self.template_page_id = config.get("template_page_id", "")
         api_token = config.get("api_token", "")
         if api_token.startswith("${"):
             api_token = os.getenv(api_token[2:-1], "")
@@ -16,6 +17,41 @@ class NotionPublisher:
             "Content-Type": "application/json",
             "Notion-Version": "2022-06-28",
         }
+
+    def get_template(self) -> str:
+        """양식 페이지 내용을 플레인 텍스트로 반환한다. 설정이 없으면 빈 문자열."""
+        if not self.template_page_id:
+            return ""
+
+        resp = requests.get(
+            f"https://api.notion.com/v1/blocks/{self.template_page_id}/children?page_size=100",
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+
+        lines = []
+        for block in resp.json().get("results", []):
+            btype = block.get("type")
+            content = block.get(btype, {})
+            rich_text = content.get("rich_text", [])
+            text = "".join(rt.get("plain_text", "") for rt in rich_text)
+            if not text.strip():
+                continue
+
+            if btype == "heading_1":
+                lines.append(f"# {text}")
+            elif btype == "heading_2":
+                lines.append(f"## {text}")
+            elif btype == "heading_3":
+                lines.append(f"### {text}")
+            elif btype == "bulleted_list_item":
+                lines.append(f"- {text}")
+            elif btype == "numbered_list_item":
+                lines.append(f"1. {text}")
+            else:
+                lines.append(text)
+
+        return "\n".join(lines)
 
     def publish(self, title: str, body_html: str) -> str:
         """Notion에 새 페이지를 생성하고 URL을 반환한다."""

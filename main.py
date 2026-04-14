@@ -159,22 +159,22 @@ def on_file_shared(event, client, say):
 
 
 # ── Claude로 회의록 생성 ──────────────────────────────────
-def generate_minutes(transcript: str) -> tuple[str, str]:
+def generate_minutes(transcript: str, template: str = "") -> tuple[str, str]:
     """회의록 제목과 HTML 본문을 생성하여 (title, body_html) 튜플로 반환한다."""
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+    template_section = (
+        f"\n## 회의록 양식 (아래 구조를 그대로 따라 작성하세요)\n{template}\n"
+        if template else
+        "\n기본 형식(회의 일시, 참석자, 주요 안건 및 논의 내용, 결정 사항, Action Item)으로 작성하세요.\n"
+    )
 
     prompt = f"""아래 회의 녹취록을 분석하여 회의록을 작성해주세요.
 
 ## 출력 형식
 첫 줄에 제목만 출력하고, 그 다음 줄부터 HTML 본문을 출력하세요.
 제목 형식: 회의록 - [날짜] [주제]
-
-HTML 본문에는 다음을 포함하세요:
-- 회의 일시, 참석자
-- 주요 안건 및 논의 내용
-- 결정 사항
-- Action Item (담당자, 기한)
-
+{template_section}
 ## 녹취록
 {transcript}
 """
@@ -199,8 +199,9 @@ HTML 본문에는 다음을 포함하세요:
 
 # ── 회의록 생성 + 게시 ────────────────────────────────────
 def generate_and_publish(transcript: str) -> str:
-    title, body_html = generate_minutes(transcript)
     publisher = get_publisher(config)
+    template = publisher.get_template()
+    title, body_html = generate_minutes(transcript, template)
     return publisher.publish(title, body_html)
 
 

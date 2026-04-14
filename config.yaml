@@ -14,7 +14,8 @@ publisher:
     user_email: eunhyekim@hecto.co.kr
     api_token: ${ATLASSIAN_API_TOKEN}
   notion:
-    parent_page_id: ""           # Notion 부모 페이지 ID
+    parent_page_id: "3413037f90f18059b795cefabf60ea19"
+    template_page_id: "3413037f90f180c793f3ea63ad56af46"
     api_token: ${NOTION_API_TOKEN}
 
 slack:
