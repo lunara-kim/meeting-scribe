@@ -1,6 +1,7 @@
 import os
 import tempfile
 import threading
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 import yaml
@@ -42,6 +43,53 @@ app = App(token=os.getenv("SLACK_BOT_TOKEN"))
 AUDIO_EXTENSIONS = {".mp3", ".mp4", ".wav", ".m4a", ".ogg", ".webm", ".flac"}
 
 
+def download_slack_file(client, file_id: str, expected_size: int = 0, max_attempts: int = 5) -> bytes:
+    """Slack 파일을 다운로드하되, 처리가 덜 끝난 경우를 대비해 재시도한다.
+
+    Slack의 file_shared 이벤트는 업로드 처리 완료 전에 발생할 수 있어
+    최초 다운로드가 0바이트를 반환하는 경우가 있다.
+    """
+    headers = {"Authorization": f"Bearer {os.getenv('SLACK_BOT_TOKEN')}"}
+    last_error = None
+
+    for attempt in range(1, max_attempts + 1):
+        # 최신 파일 정보 재조회 (url이 바뀔 수 있음)
+        info = client.files_info(file=file_id)["file"]
+        size = info.get("size", 0)
+        url = info.get("url_private_download") or info.get("url_private")
+
+        if size == 0 or not url:
+            print(f"[DOWNLOAD] attempt {attempt}: 파일 처리 대기 중 (size={size})")
+            time.sleep(2 * attempt)
+            continue
+
+        try:
+            resp = requests.get(url, headers=headers, timeout=60)
+            resp.raise_for_status()
+            content = resp.content
+
+            if len(content) == 0:
+                print(f"[DOWNLOAD] attempt {attempt}: 0바이트 응답, 재시도")
+                time.sleep(2 * attempt)
+                continue
+
+            # expected_size가 있고 실제 크기와 크게 차이나면 재시도
+            if expected_size and len(content) < expected_size * 0.9:
+                print(f"[DOWNLOAD] attempt {attempt}: 불완전한 다운로드 ({len(content)}/{expected_size}), 재시도")
+                time.sleep(2 * attempt)
+                continue
+
+            print(f"[DOWNLOAD] 성공: {len(content)} bytes (attempt {attempt})")
+            return content
+
+        except requests.RequestException as e:
+            last_error = e
+            print(f"[DOWNLOAD] attempt {attempt} 실패: {e}")
+            time.sleep(2 * attempt)
+
+    raise RuntimeError(f"파일 다운로드 {max_attempts}회 실패: {last_error}")
+
+
 # ── Slack 이벤트 핸들러 ────────────────────────────────────
 @app.event("app_mention")
 def on_mention(event, client, say):
@@ -68,23 +116,22 @@ def on_mention(event, client, say):
         say(text="⚠️ 스레드에서 오디오 파일을 찾지 못했습니다. 녹음 파일과 같은 스레드에서 멘션해 주세요.", thread_ts=thread_ts)
         return
 
-    _process_audio_file(audio_file, say, thread_ts)
+    _process_audio_file(audio_file, say, thread_ts, client)
 
 
-def _process_audio_file(file_info, say, thread_ts):
-    """오디오 파일을 다운로드 → STT → 회의록 생성 → Confluence 게시"""
+def _process_audio_file(file_info, say, thread_ts, client):
+    """오디오 파일을 다운로드 → STT → 회의록 생성 → 게시"""
     filename = file_info.get("name", "")
     ext = os.path.splitext(filename)[1].lower()
+    file_id = file_info["id"]
+    expected_size = file_info.get("size", 0)
 
     say(text="🎙️ 녹음 파일 감지! 회의록 생성을 시작합니다...", thread_ts=thread_ts)
 
-    response = requests.get(
-        file_info["url_private_download"],
-        headers={"Authorization": f"Bearer {os.getenv('SLACK_BOT_TOKEN')}"},
-    )
+    content = download_slack_file(client, file_id, expected_size)
 
     with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-        tmp.write(response.content)
+        tmp.write(content)
         tmp_path = tmp.name
 
     try:
@@ -130,13 +177,11 @@ def on_file_shared(event, client, say):
 
     reply("🎙️ 녹음 파일 감지! 회의록 생성을 시작합니다...")
 
-    response = requests.get(
-        file_info["url_private_download"],
-        headers={"Authorization": f"Bearer {os.getenv('SLACK_BOT_TOKEN')}"},
-    )
+    expected_size = file_info.get("size", 0)
+    content = download_slack_file(client, file_id, expected_size)
 
     with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-        tmp.write(response.content)
+        tmp.write(content)
         tmp_path = tmp.name
 
     try:
@@ -180,7 +225,7 @@ def generate_minutes(transcript: str, template: str = "") -> tuple[str, str]:
 """
 
     response = client.messages.create(
-        model="claude-sonnet-4-5-20250514",
+        model="claude-sonnet-4-5",
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
