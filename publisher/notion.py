@@ -1,5 +1,9 @@
+import logging
 import os
+
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 class NotionPublisher:
@@ -74,7 +78,7 @@ class NotionPublisher:
             headers=self._headers(),
         )
         if not resp.ok:
-            print(f"[Notion] {resp.status_code} 응답 본문: {resp.text}")
+            logger.error("notion api error", extra={"status": resp.status_code, "body": resp.text})
             resp.raise_for_status()
 
         return resp.json()["url"]

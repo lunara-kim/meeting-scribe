@@ -1,5 +1,8 @@
+import logging
 import os
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 
 class WhisperAPI:
@@ -10,7 +13,7 @@ class WhisperAPI:
         self.client = OpenAI(api_key=api_key)
 
     def transcribe(self, audio_path: str) -> str:
-        print(f"[STT] OpenAI Whisper API 변환 시작: {audio_path}")
+        logger.info("whisper api transcription started", extra={"audio_path": audio_path})
         with open(audio_path, "rb") as f:
             result = self.client.audio.transcriptions.create(
                 model="whisper-1",

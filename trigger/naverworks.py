@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import logging
 import os
 import threading
 import time
@@ -11,6 +12,8 @@ import requests
 from flask import Flask, abort, request
 
 from .base import AudioEvent, OnAudio, Trigger
+
+logger = logging.getLogger(__name__)
 
 
 AUDIO_EXTENSIONS = {".mp3", ".mp4", ".wav", ".m4a", ".ogg", ".webm", ".flac"}
@@ -150,8 +153,8 @@ class NaverWorksTrigger(Trigger):
         try:
             resp = requests.post(url, json=payload, headers=headers, timeout=30)
             resp.raise_for_status()
-        except requests.RequestException as e:
-            print(f"[NAVERWORKS] 메시지 전송 실패: {e}")
+        except requests.RequestException:
+            logger.exception("naverworks message send failed", extra={"channel_id": channel_id})
 
     # ── 이벤트 처리 ──────────────────────────────────────
     def _handle_event(self, payload: dict) -> None:
@@ -177,7 +180,7 @@ class NaverWorksTrigger(Trigger):
 
         file_id = content.get("fileId")
         if not file_id:
-            print("[NAVERWORKS] file 이벤트에 fileId 없음")
+            logger.warning("naverworks file event missing fileId")
             return
 
         def reply(text: str) -> None:
@@ -217,10 +220,13 @@ class NaverWorksTrigger(Trigger):
         # 기동 시 한 번 토큰 발급해 설정/개인키 이상을 빠르게 노출
         try:
             self._refresh_access_token()
-            print("🔑 NAVER WORKS access token 발급 완료")
-        except requests.RequestException as e:
-            print(f"⚠️ 초기 access token 발급 실패 (이후 요청 시 재시도됨): {e}")
+            logger.info("naverworks access token issued")
+        except requests.RequestException:
+            logger.warning("initial naverworks access token issuance failed; will retry on demand", exc_info=True)
 
-        print(f"🌐 NAVER WORKS Callback 수신 대기: {self.host}:{self.port}{self.callback_path}")
+        logger.info(
+            "naverworks callback listener started",
+            extra={"host": self.host, "port": self.port, "path": self.callback_path},
+        )
         # 내부 서비스 용도이므로 Flask 내장 서버로 충분. 프로덕션에서는 gunicorn 앞에 둘 것.
         self.flask_app.run(host=self.host, port=self.port, use_reloader=False)

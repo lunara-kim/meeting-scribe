@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 
@@ -6,6 +7,8 @@ from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from .base import AudioEvent, OnAudio, Trigger
+
+logger = logging.getLogger(__name__)
 
 
 AUDIO_EXTENSIONS = {".mp3", ".mp4", ".wav", ".m4a", ".ogg", ".webm", ".flac"}
@@ -35,7 +38,7 @@ class SlackTrigger(Trigger):
         if not self.app_token:
             raise RuntimeError("Slack app_token이 비어 있습니다 (SLACK_APP_TOKEN 확인).")
         if not self.app_token.startswith("xapp-"):
-            print(f"⚠️ SLACK_APP_TOKEN이 'xapp-'으로 시작하지 않습니다: {self.app_token[:10]}...")
+            logger.warning("SLACK_APP_TOKEN does not start with 'xapp-'", extra={"prefix": self.app_token[:10]})
 
         self.app = App(token=self.bot_token)
         self._register_handlers()
@@ -56,7 +59,7 @@ class SlackTrigger(Trigger):
             url = info.get("url_private_download") or info.get("url_private")
 
             if size == 0 or not url:
-                print(f"[DOWNLOAD] attempt {attempt}: 파일 처리 대기 중 (size={size})")
+                logger.info("waiting for slack file processing", extra={"attempt": attempt, "size": size, "file_id": file_id})
                 time.sleep(2 * attempt)
                 continue
 
@@ -66,21 +69,24 @@ class SlackTrigger(Trigger):
                 content = resp.content
 
                 if len(content) == 0:
-                    print(f"[DOWNLOAD] attempt {attempt}: 0바이트 응답, 재시도")
+                    logger.warning("slack download returned 0 bytes, retrying", extra={"attempt": attempt, "file_id": file_id})
                     time.sleep(2 * attempt)
                     continue
 
                 if expected_size and len(content) < expected_size * 0.9:
-                    print(f"[DOWNLOAD] attempt {attempt}: 불완전한 다운로드 ({len(content)}/{expected_size}), 재시도")
+                    logger.warning(
+                        "slack download incomplete, retrying",
+                        extra={"attempt": attempt, "received": len(content), "expected": expected_size, "file_id": file_id},
+                    )
                     time.sleep(2 * attempt)
                     continue
 
-                print(f"[DOWNLOAD] 성공: {len(content)} bytes (attempt {attempt})")
+                logger.info("slack download succeeded", extra={"bytes": len(content), "attempt": attempt, "file_id": file_id})
                 return content
 
             except requests.RequestException as e:
                 last_error = e
-                print(f"[DOWNLOAD] attempt {attempt} 실패: {e}")
+                logger.warning("slack download failed, retrying", extra={"attempt": attempt, "file_id": file_id, "error": str(e)})
                 time.sleep(2 * attempt)
 
         raise RuntimeError(f"파일 다운로드 {max_attempts}회 실패: {last_error}")
@@ -138,7 +144,7 @@ class SlackTrigger(Trigger):
 
             channels = file_info.get("channels", [])
             if not channels:
-                print(f"[WARN] file_shared 이벤트에 채널 정보 없음: {file_id}")
+                logger.warning("file_shared event missing channel info", extra={"file_id": file_id})
                 return
 
             channel = channels[0]
@@ -150,6 +156,6 @@ class SlackTrigger(Trigger):
 
     # ── 실행 ──────────────────────────────────────────────
     def start(self) -> None:
-        print("🔌 Slack Socket Mode 연결 시도 중...")
+        logger.info("connecting to slack socket mode")
         handler = SocketModeHandler(self.app, self.app_token)
         handler.start()

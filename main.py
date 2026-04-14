@@ -1,3 +1,4 @@
+import logging
 import os
 import tempfile
 import threading
@@ -6,10 +7,14 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import yaml
 from dotenv import load_dotenv
 
+from logging_config import setup_logging
 from stt import get_stt
 from publisher import get_publisher
 from llm import get_llm
 from trigger import AudioEvent, get_trigger
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 
 # ── Fly.io 헬스체크용 미니 HTTP 서버 ───────────────────────
@@ -26,7 +31,7 @@ class HealthHandler(BaseHTTPRequestHandler):
 def start_health_server():
     server = HTTPServer(("0.0.0.0", 8080), HealthHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    print("🩺 Health check server started on :8080")
+    logger.info("health check server started", extra={"port": 8080})
 
 
 load_dotenv()
@@ -88,7 +93,7 @@ def on_audio(event: AudioEvent) -> None:
         event.reply("📝 음성 → 텍스트 변환 중...")
         stt = get_stt(config)
         transcript = stt.transcribe(tmp_path)
-        print(f"[STT 결과]\n{transcript[:200]}...")
+        logger.info("stt completed", extra={"preview": transcript[:200], "length": len(transcript)})
 
         event.reply("🤖 회의록 작성 및 게시 중...")
         page_url = generate_and_publish(transcript)
@@ -96,6 +101,7 @@ def on_audio(event: AudioEvent) -> None:
         event.reply(f"✅ 회의록이 생성되었습니다!\n{page_url}")
 
     except Exception as e:
+        logger.exception("pipeline failed", extra={"audio_filename": event.filename})
         event.reply(f"❌ 오류가 발생했습니다: {str(e)}")
         raise
 
@@ -109,10 +115,10 @@ if __name__ == "__main__":
 
     trigger = get_trigger(config, on_audio)
     provider = config["trigger"]["provider"]
-    print(f"🚀 회의록 에이전트 시작 (trigger: {provider})")
+    logger.info("meeting-scribe started", extra={"trigger": provider})
 
     try:
         trigger.start()
-    except Exception as e:
-        print(f"❌ 트리거 실행 실패: {e}")
+    except Exception:
+        logger.exception("trigger failed to start")
         exit(1)
