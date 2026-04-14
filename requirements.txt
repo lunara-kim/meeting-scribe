@@ -4,3 +4,5 @@ requests
 pyyaml
 python-dotenv
 openai              # whisper API + 추후 whisper_local 전환 시에도 사용
+flask               # NAVER WORKS Callback URL 수신 서버
+pyjwt[crypto]       # NAVER WORKS Service Account JWT 서명 (RS256)

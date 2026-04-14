@@ -6,21 +6,19 @@
 
 | 계층 | 사용 서비스 |
 |------|-------------|
+| Trigger | Slack (Socket Mode) **또는** NAVER WORKS Bot (Callback URL) |
 | STT  | Whisper (local) |
 | LLM  | Ollama (로컬 LLM) |
 | Publisher | Confluence (사내 Atlassian Cloud/Server) |
 | Hosting | 사내 Linux 서버 (Docker) |
 
+트리거는 `config.yaml`의 `trigger.provider`로 스위칭한다 (`slack` | `naverworks`).
+
 ---
 
-## 1. 사전 준비물
+## 1. 사전 준비물 — 공통
 
-### 1-1. Slack App
-외부환경과 동일. `docs/deploy-external.md`의 **1-1** 참조.
-
-> Socket Mode는 아웃바운드 WebSocket 연결이므로 사내망에서도 Slack API 접근만 허용되면 동작한다. 방화벽에서 `*.slack.com` 허용 필요.
-
-### 1-2. Ollama 서버
+### 1-1. Ollama 서버
 LLM 추론용 로컬 LLM 서버.
 
 **설치** (Linux):
@@ -43,22 +41,72 @@ curl http://localhost:11434/api/tags
 
 meeting-scribe와 같은 호스트에 띄우면 `http://localhost:11434`, 별도 서버면 `http://<ollama-host>:11434` 사용.
 
-### 1-3. Confluence 권한
+### 1-2. Confluence 권한
 - 회의록을 게시할 **부모 페이지** 결정 → URL에서 page ID 추출
   - 예) `https://hectoinno.atlassian.net/wiki/spaces/TF/pages/323190803/...` → `323190803`
 - 해당 Space key 확인 (URL의 `spaces/TF` 부분)
 - **Atlassian API Token** 발급: https://id.atlassian.com/manage-profile/security/api-tokens → Create → `ATATT3...` 복사
 
-### 1-4. 내부 서버 요구사항
+### 1-3. 내부 서버 요구사항
 - Linux (Ubuntu 22.04 권장)
 - Docker 24+
-- 네트워크: Slack API(`*.slack.com`), 사내 Confluence, Ollama 서버 접근 가능
+- 네트워크: 사용하는 트리거에 따라 다름 (아래 1-A / 1-B 참조), 사내 Confluence, Ollama 서버 접근 가능
+
+---
+
+## 1-A. 트리거 — Slack (Socket Mode)
+
+외부환경과 동일. `docs/deploy-external.md`의 **1-1** 참조.
+
+> Socket Mode는 아웃바운드 WebSocket 연결이므로 사내망에서도 Slack API 접근만 허용되면 동작한다. 방화벽에서 `*.slack.com` 443/TCP **아웃바운드** 허용 필요.
+
+---
+
+## 1-B. 트리거 — NAVER WORKS Bot (Callback URL)
+
+사내 NAVER WORKS를 메신저로 사용하는 환경용. Slack과 달리 **Callback URL(인바운드 HTTPS)** 방식이므로 네트워크 준비가 필요하다.
+
+### 1-B-1. 네트워크 준비 (필수)
+
+NAVER WORKS는 `*.worksmobile.com` 서버가 우리 봇 서버로 HTTPS POST를 보낸다.
+
+- 봇 서버가 **인터넷에서 HTTPS로 접근 가능**해야 함
+- 공인 도메인(예: `bot.hecto.co.kr`) + SSL 인증서 필요
+- 사내망인 경우 일반적인 선택지:
+  - (a) **DMZ/리버스 프록시**: 공인 IP를 가진 nginx가 `/callback`을 내부 봇 서버로 포워딩
+  - (b) **아웃바운드 터널**: Cloudflare Tunnel 등 (보안팀 허용 필요)
+
+### 1-B-2. Developer Console — App 등록
+
+https://developers.worksmobile.com/ 접속 → **Console → App → 새 App 생성**
+
+발급받을 값:
+- **Client ID** / **Client Secret**
+- **Service Account** (예: `xxxxx.serviceaccount@<domain>`)
+- **Private Key** (RS256 PEM — 다운로드 1회만 가능, 분실 시 재발급)
+- Scopes: `bot`
+
+### 1-B-3. Developer Console — Bot 생성/등록
+
+**Bot → 새 Bot 생성**:
+- **Bot ID** / **Bot Secret** (Callback 서명 검증용)
+- Callback 이벤트: `message` 활성화 (파일 첨부 이벤트 포함)
+- Callback URL: `https://bot.hecto.co.kr/callback` (1-B-1에서 준비한 주소)
+
+생성한 Bot을 **도메인에 등록**해야 사용자가 볼 수 있다. Admin → 서비스 → Bot → 등록.
+
+### 1-B-4. 네트워크 방화벽
+
+- **인바운드**: 인터넷 → 봇 서버 443/TCP (Callback 수신)
+- **아웃바운드**: `auth.worksmobile.com`, `www.worksapis.com` 443/TCP 허용
+  - Access Token 발급 + 첨부파일 다운로드 + 메시지 전송
 
 ---
 
 ## 2. 설정 파일
 
-`config.yaml`:
+`config.yaml` 예시 (NAVER WORKS + Ollama + Confluence):
+
 ```yaml
 stt:
   provider: whisper_local
@@ -81,10 +129,25 @@ publisher:
     user_email: your.email@hecto.co.kr
     api_token: ${ATLASSIAN_API_TOKEN}
 
-slack:
-  bot_token: ${SLACK_BOT_TOKEN}
-  app_token: ${SLACK_APP_TOKEN}
+trigger:
+  provider: naverworks           # slack / naverworks
+  slack:
+    bot_token: ${SLACK_BOT_TOKEN}
+    app_token: ${SLACK_APP_TOKEN}
+  naverworks:
+    client_id: ${NAVERWORKS_CLIENT_ID}
+    client_secret: ${NAVERWORKS_CLIENT_SECRET}
+    service_account: ${NAVERWORKS_SERVICE_ACCOUNT}
+    bot_id: ${NAVERWORKS_BOT_ID}
+    bot_secret: ${NAVERWORKS_BOT_SECRET}
+    private_key: ${NAVERWORKS_PRIVATE_KEY}           # PEM 문자열 직접 주입
+    # private_key_path: /app/secrets/naverworks-private.key   # 또는 파일 마운트
+    callback_host: 0.0.0.0
+    callback_port: 3000
+    callback_path: /callback
 ```
+
+> Slack을 쓰려면 `trigger.provider: slack`로 바꾸면 된다. 한 쪽 설정이 비어 있어도 문제 없다 — 선택된 provider만 읽힌다.
 
 ---
 
@@ -98,6 +161,8 @@ docker build -t meeting-scribe:latest .
 ```
 
 ### 3-2. `.env` 파일 작성
+
+**Slack 트리거 사용 시**:
 ```bash
 cat > .env <<EOF
 SLACK_BOT_TOKEN=xoxb-...
@@ -107,7 +172,25 @@ EOF
 chmod 600 .env
 ```
 
+**NAVER WORKS 트리거 사용 시**:
+```bash
+cat > .env <<'EOF'
+NAVERWORKS_CLIENT_ID=xxxx
+NAVERWORKS_CLIENT_SECRET=xxxx
+NAVERWORKS_SERVICE_ACCOUNT=xxxx.serviceaccount@domain
+NAVERWORKS_BOT_ID=12345678
+NAVERWORKS_BOT_SECRET=xxxx
+NAVERWORKS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"
+ATLASSIAN_API_TOKEN=ATATT3...
+EOF
+chmod 600 .env
+```
+
+> `NAVERWORKS_PRIVATE_KEY`는 PEM 전체를 한 줄에 넣되 개행은 `\n`으로 이스케이프하거나, 또는 파일로 두고 `private_key_path`를 사용해 마운트한다.
+
 ### 3-3. 실행
+
+**Slack**:
 ```bash
 docker run -d \
   --name meeting-scribe \
@@ -118,17 +201,45 @@ docker run -d \
   meeting-scribe:latest
 ```
 
+**NAVER WORKS** (Callback 수신용 3000 포트 추가 노출):
+```bash
+docker run -d \
+  --name meeting-scribe \
+  --restart unless-stopped \
+  --env-file .env \
+  -v $(pwd)/config.yaml:/app/config.yaml:ro \
+  -p 8080:8080 \
+  -p 3000:3000 \
+  meeting-scribe:latest
+```
+
+> 3000 포트는 리버스 프록시(nginx 등)를 통해 HTTPS로 외부에 노출해야 한다. 예시:
+> ```nginx
+> location /callback {
+>   proxy_pass http://127.0.0.1:3000/callback;
+>   proxy_set_header X-WORKS-Signature $http_x_works_signature;
+> }
+> ```
+
 ### 3-4. 로그 확인
 ```bash
 docker logs -f meeting-scribe
 ```
 
-정상 기동 로그:
+정상 기동 로그 (Slack):
 ```
 🩺 Health check server started on :8080
-🚀 회의록 에이전트 시작
-🔌 Socket Mode 연결 시도 중...
+🚀 회의록 에이전트 시작 (trigger: slack)
+🔌 Slack Socket Mode 연결 시도 중...
 ⚡️ Bolt app is running!
+```
+
+정상 기동 로그 (NAVER WORKS):
+```
+🩺 Health check server started on :8080
+🚀 회의록 에이전트 시작 (trigger: naverworks)
+🔑 NAVER WORKS access token 발급 완료
+🌐 NAVER WORKS Callback 수신 대기: 0.0.0.0:3000/callback
 ```
 
 ---
@@ -156,7 +267,7 @@ docker stop meeting-scribe && docker rm meeting-scribe
 `/etc/systemd/system/meeting-scribe.service`:
 ```ini
 [Unit]
-Description=Meeting Scribe Slack Bot
+Description=Meeting Scribe Bot
 After=docker.service
 Requires=docker.service
 
@@ -176,9 +287,16 @@ sudo systemctl enable --now meeting-scribe
 
 ## 5. 사용법
 
+### Slack
 외부환경과 동일. `docs/deploy-external.md`의 **5. 사용법** 참조.
 
-결과 페이지 URL만 Confluence로 바뀐다:
+### NAVER WORKS
+1. 봇을 대화방/채널에 초대
+2. 오디오 파일(`.m4a`, `.mp3`, `.wav`, `.mp4`, `.ogg`, `.webm`, `.flac`)을 채널에 업로드
+3. 봇이 자동으로 감지 → STT → 회의록 → Confluence 게시
+4. 완료 시 결과 URL을 같은 채널에 회신
+
+결과 페이지 URL은 Confluence로 표시된다:
 ```
 ✅ 회의록이 생성되었습니다!
 https://hectoinno.atlassian.net/wiki/pages/<page-id>
@@ -197,6 +315,10 @@ https://hectoinno.atlassian.net/wiki/pages/<page-id>
 | Confluence 400 | Space key 또는 parent_page_id 오류 | 실제 URL에서 값 재확인 |
 | 첫 추론이 매우 느림 | Ollama가 모델을 메모리로 로드 중 | 재기동 직후 warm-up 요청 1회 권장 |
 | Slack Socket Mode 연결 안 됨 | 방화벽이 `*.slack.com` WebSocket 차단 | 사내 네트워크팀에 Slack WebSocket(443/TCP outbound) 허용 요청 |
+| NAVER WORKS Callback 401 | `bot_secret` 불일치 → HMAC 서명 검증 실패 | Developer Console Bot 화면의 Bot Secret과 일치하는지 확인 |
+| NAVER WORKS 토큰 발급 실패 | Service Account, Client ID/Secret, 개인키 불일치 | Developer Console에서 값 재확인, 개인키 PEM 개행 처리 확인 |
+| NAVER WORKS 파일 다운로드 실패 | 첨부파일 만료(일정 시간 후 삭제) 또는 토큰 스코프 부족 | Bot에 `bot` scope 부여, 업로드 직후 짧은 시간 내 처리되도록 유지 |
+| Callback이 아예 오지 않음 | 인바운드 방화벽/리버스 프록시 설정, TLS 인증서 | `curl -X POST https://<도메인>/callback` 외부망에서 200/401 응답 오는지 확인 |
 
 ---
 

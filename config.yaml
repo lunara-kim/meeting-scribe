@@ -29,6 +29,19 @@ publisher:
     template_page_id: "3413037f90f180c793f3ea63ad56af46"
     api_token: ${NOTION_API_TOKEN}
 
-slack:
-  bot_token: ${SLACK_BOT_TOKEN}
-  app_token: ${SLACK_APP_TOKEN}
+trigger:
+  provider: slack                # slack / naverworks 선택
+  slack:
+    bot_token: ${SLACK_BOT_TOKEN}
+    app_token: ${SLACK_APP_TOKEN}
+  naverworks:
+    client_id: ${NAVERWORKS_CLIENT_ID}
+    client_secret: ${NAVERWORKS_CLIENT_SECRET}
+    service_account: ${NAVERWORKS_SERVICE_ACCOUNT}
+    bot_id: ${NAVERWORKS_BOT_ID}
+    bot_secret: ${NAVERWORKS_BOT_SECRET}
+    private_key: ${NAVERWORKS_PRIVATE_KEY}       # PEM 문자열 직접 주입 (개행은 \n 그대로)
+    # private_key_path: /app/secrets/naverworks-private.key  # 또는 파일 마운트
+    callback_host: 0.0.0.0
+    callback_port: 3000
+    callback_path: /callback
