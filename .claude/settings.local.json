@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(python -m pip install -q pytest pytest-mock)",
+      "Bash(python -m pytest)",
+      "Bash(python -m pip install -q -r requirements.txt)",
+      "Bash(git add:*)",
+      "Bash(git commit -m 'fix: open config.yaml with utf-8 encoding:*)",
+      "Bash(git commit -m 'test: add pytest setup and unit tests with mocked external APIs:*)",
+      "Bash(git commit -m 'docs: add project CLAUDE.md:*)",
+      "Bash(git push:*)",
+      "Bash(python -c 'from logging_config import setup_logging; import logging; setup_logging\\(\\); log = logging.getLogger\\('\\\\''smoke'\\\\''\\); log.info\\('\\\\''hello'\\\\'', extra={'\\\\''k'\\\\'':'\\\\''v'\\\\''}\\); log.warning\\('\\\\''warn'\\\\'', extra={'\\\\''n'\\\\'':1}\\);:*)"
+    ]
+  }
+}
